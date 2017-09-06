@@ -1,0 +1,215 @@
+diff -Naur MQTTSN/EthernetInterface/.mbedignore MQTTSN.mod/EthernetInterface/.mbedignore
+--- MQTTSN/EthernetInterface/.mbedignore	1970-01-01 08:00:00.000000000 +0800
++++ MQTTSN.mod/EthernetInterface/.mbedignore	2017-09-05 17:15:44.211706283 +0800
+@@ -0,0 +1 @@
++*.*
+diff -Naur MQTTSN/MQTTSNClient.h MQTTSN.mod/MQTTSNClient.h
+--- MQTTSN/MQTTSNClient.h	2017-09-05 17:13:44.843735402 +0800
++++ MQTTSN.mod/MQTTSNClient.h	2017-08-31 15:33:50.700319892 +0800
+@@ -325,7 +325,7 @@
+     do
+     {
+         sent = ipstack.write(sendbuf, length, timer.left_ms());
+-        printf("sendPacket, rc %d from write of %d bytes\n", sent, length);
++        printf("sendPacket, rc %d from write of %d bytes \n\r", sent, length);
+         if (sent < 0)  // there was an error writing the data
+             break;
+     }
+@@ -342,7 +342,7 @@
+         
+ #if defined(MQTT_DEBUG)
+     char printbuf[50];
+-    DEBUG("Rc %d from sending packet %s\n", rc, MQTTPacket_toString(printbuf, sizeof(printbuf), sendbuf, length));
++    DEBUG("Rc %d from sending packet %s \n\r", rc, MQTTPacket_toString(printbuf, sizeof(printbuf), sendbuf, length));
+ #endif
+     return rc;
+ }
+@@ -379,7 +379,7 @@
+         
+ #if defined(MQTT_DEBUG)
+     char printbuf[50];
+-    DEBUG("Rc %d from receiving packet %s\n", rc, MQTTPacket_toString(printbuf, sizeof(printbuf), readbuf, len));
++    DEBUG("Rc %d from receiving packet %s \n\r", rc, MQTTPacket_toString(printbuf, sizeof(printbuf), readbuf, len));
+ #endif
+     return rc;
+ }
+@@ -422,13 +422,13 @@
+ int MQTTSN::Client<Network, Timer, a, MAX_MESSAGE_HANDLERS>::deliverMessage(MQTTSN_topicid& topic, Message& message)
+ {
+     int rc = FAILURE;
+-    printf("deliverMessage topic id is %d\n", topic.data.id);
++    printf("deliverMessage topic id is %d \n\r", topic.data.id);
+ 
+     // we have to find the right message handler - indexed by topic
+     for (int i = 0; i < MAX_MESSAGE_HANDLERS; ++i)
+     {
+         if (messageHandlers[i].topicFilter != 0)
+-            printf("messageHandler %d topic id is %d\n", i, messageHandlers[i].topicFilter->data.id);
++            printf("messageHandler %d topic id is %d \n\r", i, messageHandlers[i].topicFilter->data.id);
+         if (messageHandlers[i].topicFilter != 0 && (topic.data.id == messageHandlers[i].topicFilter->data.id))
+         //MQTTSNtopic_equals(&topic, messageHandlers[i].topicFilter) ||
+          //       isTopicMatched(messageHandlers[i].topicFilter, topic)))
+@@ -536,9 +536,9 @@
+                     rc = FAILURE;
+                 else
+                 {
+-                    printf("sending puback len %d\n", len);
++                    printf("sending puback len %d \n\r", len);
+                     rc = sendPacket(len, timer);
+-                    printf("rc %d from sending puback\n", rc);
++                    printf("rc %d from sending puback \n\r", rc);
+                 }
+                 if (rc == FAILURE)
+                     goto exit; // there was a problem
+@@ -679,7 +679,7 @@
+ template<class Network, class Timer, int MAX_PACKET_SIZE, int b>
+ int MQTTSN::Client<Network, Timer, MAX_PACKET_SIZE, b>::connect()
+ {
+-    MQTTPacket_connectData default_options = MQTTPacket_connectData_initializer;
++    MQTTSNPacket_connectData default_options = MQTTSNPacket_connectData_initializer;
+     return connect(default_options);
+ }
+ 
+@@ -690,12 +690,13 @@
+     int rc = FAILURE;
+     Timer timer = Timer(command_timeout_ms);
+     int len = 0;
++    bool freeHandler = false;
+ 
+     if (!isconnected)
+         goto exit;
+-        
+-    bool freeHandler = false;
+-    for (int i = 0; i < MAX_MESSAGE_HANDLERS; ++i)
++	
++    freeHandler = false;
++	for (int i = 0; i < MAX_MESSAGE_HANDLERS; ++i)
+     {
+         if (messageHandlers[i].topicFilter == 0)
+         {
+diff -Naur MQTTSN/MQTTSNUDP.h MQTTSN.mod/MQTTSNUDP.h
+--- MQTTSN/MQTTSNUDP.h	2017-09-05 17:13:44.843735402 +0800
++++ MQTTSN.mod/MQTTSNUDP.h	2017-09-05 14:12:48.055353994 +0800
+@@ -4,40 +4,77 @@
+ #include "MQTTmbed.h"
+ #include "UDPSocket.h"
+ 
++#if defined(TARGET_ADV_WISE_1570)
++UDPSocket mysock;
++
+ class MQTTSNUDP
+ {
+ public:    
++    int connect(char* hostname, int port, NetworkStack *net, int timeout=1000)
++    {
++        net->gethostbyname((const char *)hostname, &remote);
++        remote.set_port(port);
++        return mysock.open(net);
++    }
++
++    int read(unsigned char* buffer, int len, int timeout)
++    {
++        mysock.set_blocking(false); 
++        return mysock.recvfrom(&remote, (void*)buffer, len);
++    }
++    
++    int write(unsigned char* buffer, int len, int timeout)
++    {
++        mysock.set_blocking(false);  
++        return mysock.sendto(remote, (void*)buffer, len);
++    }
++    
++    int disconnect()
++    {
++        return mysock.close();
++    }
++    
++private:  
++    //UDPSocket mysock; // Comment for ignored compilation issue
++    SocketAddress remote;
++    
++};
++
++#else
++
++class MQTTSNUDP
++{
++public:
+     int connect(char* hostname, int port, int timeout=1000)
+     {
+         mysock.init();
+-        //mysock.set_blocking(false, timeout);    // 1 second Timeout 
++        //mysock.set_blocking(false, timeout);    // 1 second Timeout
+         return remote.set_address((const char *)hostname, port);
+     }
+ 
+     int read(unsigned char* buffer, int len, int timeout)
+     {
+-        mysock.set_blocking(false, timeout);  
++        mysock.set_blocking(false, timeout);
+         return mysock.receiveFrom(remote, (char *)buffer, len);
+     }
+-    
++
+     int write(unsigned char* buffer, int len, int timeout)
+     {
+-        mysock.set_blocking(false, timeout);  
++        mysock.set_blocking(false, timeout);
+         return mysock.sendTo(remote, (char*)buffer, len);
+     }
+-    
++
+     int disconnect()
+     {
+         return mysock.close();
+     }
+-    
++
+ private:
+ 
+     UDPSocket mysock;
+     Endpoint remote;
+-    
+-};
+-
+ 
++};
+ 
++#endif // TARGET_ADV_WISE_1570
+ #endif
+diff -Naur MQTTSN/MQTTmbed.h MQTTSN.mod/MQTTmbed.h
+--- MQTTSN/MQTTmbed.h	2017-09-05 17:13:44.843735402 +0800
++++ MQTTSN.mod/MQTTmbed.h	2017-09-05 17:05:37.196524408 +0800
+@@ -3,18 +3,20 @@
+ 
+ #include "mbed.h"
+ 
++Timer t;
++
+ class Countdown
+ {
+ public:
+     Countdown()
+     {
+-        t = Timer();   
++        //t = Timer();   
+     }
+     
+     Countdown(int ms)
+     {
+-        t = Timer();
+-        countdown_ms(ms);   
++        //t = Timer();
++        //countdown_ms(ms);   
+     }
+     
+     
+@@ -42,7 +44,7 @@
+     }
+     
+ private:
+-    Timer t;
++    //Timer t; // Comment for ignored compilation issue
+     unsigned long interval_end_ms; 
+ };
+ 
